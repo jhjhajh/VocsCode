@@ -1678,6 +1678,20 @@ export class SessionManager {
     return meta;
   }
 
+  /** Allowed in any status, including mid-turn: it changes the host's power state, not the runtime. */
+  async setKeepAwake(id: string, enabled: boolean): Promise<SessionMeta> {
+    this.assertUnmanaged(id);
+    const meta = this.get(id);
+    if (!meta) throw new Error('Session not found');
+    if (typeof enabled !== 'boolean') throw new Error('Keep awake must be a boolean');
+    if (enabled) meta.keepAwake = true;
+    else delete meta.keepAwake;
+    await this.deps.store.upsert(meta);
+    this.deps.log('info', `[${id}] keep awake ${enabled ? 'on' : 'off'}`);
+    this.pushSessions();
+    return meta;
+  }
+
   async setFastMode(id: string, enabled: boolean): Promise<SessionMeta> {
     this.assertUnmanaged(id);
     const meta = this.get(id);

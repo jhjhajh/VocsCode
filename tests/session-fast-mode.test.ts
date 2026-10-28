@@ -258,3 +258,33 @@ describe('per-session Fast mode lifecycle', () => {
     expect(meta.config.model).toEqual(incompatible);
   });
 });
+
+describe('per-session keep-awake lifecycle', () => {
+  it('is off by default, persists while on, and is dropped on the next launch', async () => {
+    const { create, dir, store, manager, deps } = await fixture();
+    const meta = await create();
+    expect(meta.keepAwake).toBeUndefined();
+    await manager.setKeepAwake(meta.id, true);
+    expect(meta.keepAwake).toBe(true);
+    expect(deps.pushSessions).toHaveBeenLastCalledWith(expect.arrayContaining([expect.objectContaining({ id: meta.id, keepAwake: true })]));
+    const sameLaunch = new SessionStore(dir);
+    await sameLaunch.load();
+    expect(sameLaunch.get(meta.id)?.keepAwake).toBeUndefined();
+    await store.upsert(meta);
+    const raw = JSON.parse(await fs.readFile(path.join(dir, 'sessions.json'), 'utf8')) as Array<{ id: string; keepAwake?: boolean }>;
+    expect(raw.find((s) => s.id === meta.id)?.keepAwake).toBe(true);
+    await manager.setKeepAwake(meta.id, false);
+    expect(meta.keepAwake).toBeUndefined();
+  });
+
+  it('can be switched mid-turn without touching the runtime, and rejects bad input', async () => {
+    const { create, manager } = await fixture();
+    const meta = await create();
+    await manager.send(meta.id, { text: 'Initialize' });
+    runtime.busy = true;
+    await expect(manager.setKeepAwake(meta.id, true)).resolves.toMatchObject({ keepAwake: true });
+    expect(runtime.change).not.toHaveBeenCalled();
+    await expect(manager.setKeepAwake(meta.id, 'yes' as never)).rejects.toThrow('boolean');
+    await expect(manager.setKeepAwake('s_missing', true)).rejects.toThrow('not found');
+  });
+});

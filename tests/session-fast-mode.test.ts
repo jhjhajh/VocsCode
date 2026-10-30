@@ -287,4 +287,27 @@ describe('per-session keep-awake lifecycle', () => {
     await expect(manager.setKeepAwake(meta.id, 'yes' as never)).rejects.toThrow('boolean');
     await expect(manager.setKeepAwake('s_missing', true)).rejects.toThrow('not found');
   });
+
+  it('rolls back the in-memory flag when saving the setting fails, in both directions', async () => {
+    const { create, manager, store, deps } = await fixture();
+    const meta = await create();
+    const pushSessions = deps.pushSessions as ReturnType<typeof vi.fn>;
+    // Turning on, save fails: the session must not look opted-in afterwards.
+    pushSessions.mockClear();
+    vi.spyOn(store, 'upsert').mockRejectedValueOnce(new Error('Disk full'));
+    await expect(manager.setKeepAwake(meta.id, true)).rejects.toThrow('Disk full');
+    expect(meta.keepAwake).toBeUndefined();
+    expect(pushSessions).not.toHaveBeenCalled();
+    // Turning off, save fails: the session must stay opted-in afterwards.
+    await manager.setKeepAwake(meta.id, true);
+    expect(meta.keepAwake).toBe(true);
+    pushSessions.mockClear();
+    vi.spyOn(store, 'upsert').mockRejectedValueOnce(new Error('Disk full'));
+    await expect(manager.setKeepAwake(meta.id, false)).rejects.toThrow('Disk full');
+    expect(meta.keepAwake).toBe(true);
+    expect(pushSessions).not.toHaveBeenCalled();
+    // And a clean retry still works after the failures.
+    await manager.setKeepAwake(meta.id, false);
+    expect(meta.keepAwake).toBeUndefined();
+  });
 });
